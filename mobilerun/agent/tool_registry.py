@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from llama_index.core.workflow import Context as WorkflowContext
 
     from mobilerun.agent.action_context import ActionContext
+    from mobilerun.agent.authorization import ActionAuthorizer
 
 logger = logging.getLogger("mobilerun")
 
@@ -33,8 +34,9 @@ class ToolEntry:
 class ToolRegistry:
     """Central registry of all agent-callable tools."""
 
-    def __init__(self) -> None:
+    def __init__(self, authorizer: "ActionAuthorizer | None" = None) -> None:
         self.tools: Dict[str, ToolEntry] = {}
+        self.authorizer = authorizer
 
     # -- registration --------------------------------------------------------
 
@@ -132,6 +134,37 @@ class ToolRegistry:
             )
             self._emit_event(workflow_ctx, name, args, result)
             return result
+
+        if self.authorizer is not None:
+            try:
+                decision = await self.authorizer.authorize(name, args, ctx)
+            except Exception as e:
+                result = ActionResult(
+                    success=False,
+                    summary=(
+                        "Authorization unavailable; execution blocked for "
+                        f"{name}: {describe_error(e)}"
+                    ),
+                )
+                self._emit_event(workflow_ctx, name, args, result)
+                return result
+
+            if not decision.authorized:
+                reason = decision.reason or "CARINA denied the action"
+                decision_suffix = (
+                    f" (decision_id={decision.decision_id})"
+                    if decision.decision_id
+                    else ""
+                )
+                result = ActionResult(
+                    success=False,
+                    summary=(
+                        f"Authorization denied by CARINA for {name}: "
+                        f"{reason}{decision_suffix}"
+                    ),
+                )
+                self._emit_event(workflow_ctx, name, args, result)
+                return result
 
         entry = self.tools[name]
         try:
