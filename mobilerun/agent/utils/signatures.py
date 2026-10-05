@@ -2,6 +2,7 @@
 
 import logging
 
+from mobilerun.agent.authorization import authorizer_from_env
 from mobilerun.agent.tool_registry import ToolRegistry
 from mobilerun.agent.utils.actions import (
     click,
@@ -53,7 +54,7 @@ async def build_tool_registry(
         section.  User/MCP tools added later by MobileAgent will NOT be in
         this set, so they correctly appear in ``<custom_actions>``.
     """
-    registry = ToolRegistry()
+    registry = ToolRegistry(authorizer=authorizer_from_env())
 
     if screenshot_only and normalized_coordinates:
         space = (
